@@ -20,6 +20,12 @@
 #include<opencv2/opencv.hpp>
 #include <GLFW/glfw3.h>
 #include<pthread.h>
+#include<string>
+#include <sstream>
+#include <iostream>
+#include "tinyfiledialogs.h"
+
+
 
 #ifdef _MSC_VER
 #pragma warning (disable: 4996) // 'This function or variable may be unsafe': strcpy, strdup, sprintf, vsnprintf, sscanf, fopen
@@ -53,10 +59,6 @@
 
 #define IM_MAX(_A,_B)       (((_A) >= (_B)) ? (_A) : (_B))
 
-//-----------------------------------------------------------------------------
-// DEMO CODE
-//-----------------------------------------------------------------------------
-
 #if !defined(IMGUI_DISABLE_OBSOLETE_FUNCTIONS) && defined(IMGUI_DISABLE_TEST_WINDOWS) && !defined(IMGUI_DISABLE_DEMO_WINDOWS)   // Obsolete name since 1.53, TEST->DEMO
 #define IMGUI_DISABLE_DEMO_WINDOWS
 #endif
@@ -78,14 +80,17 @@ struct OpenCVImage
 
     GLuint texture;
     cv::Mat mat; // maybe i will use this later
+    bool open;
+    string name;
     
     OpenCVImage() {
-	
+	texture = 0;
     }
     
-    void LoadCVMat(cv::Mat& frame) {
+    void LoadCVMat(cv::Mat frame) {
 	if (!texture)
 	{
+	    //mat = frame; // maybe i should copy that frame (clone it)
 	    cv::cvtColor(frame, frame, CV_BGR2RGB);
 
 	    glGenTextures(1, &texture);
@@ -100,6 +105,30 @@ struct OpenCVImage
 	    
 	}
     }
+
+    void LoadCVMat2(cv::Mat frame) {
+	if (!texture)
+	{
+	    mat = frame; // maybe i should copy that frame (clone it)
+	    if (mat.empty()) {
+		cout << "No image data ON LOADCVMAT2" << endl;
+	    }else
+		cout << "We have image data ************" << endl;
+	    cv::cvtColor(mat, mat, CV_BGR2RGB);
+
+	    glGenTextures(1, &texture);
+	    glBindTexture(GL_TEXTURE_2D, texture);
+	    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	    
+	    // Set texture clamping method
+	    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+	    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+	    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, mat.cols, mat.rows, 0, GL_RGB, GL_UNSIGNED_BYTE, mat.ptr());
+	    
+	}else
+	    cout << "We HAVE SOMETHING AT TEXTURE" << "\n";
+    }
     
     void UpdateMat(cv::Mat& frame ) {
 	// image must have same size
@@ -112,28 +141,147 @@ struct OpenCVImage
     void Clear() { glDeleteTextures(1, &texture); }
 
     GLuint * getTexture() { return &texture; }
-    
+
+    // return mat if is not empty otherwise return null
+    cv::Mat* GetMat() {
+
+	if (!mat.data)
+	{
+	    if (!mat.empty())
+		return &mat;
+	    else
+		return NULL;
+	} else
+	    return NULL;
+	
+    }
+
+    void switchOpen(){
+	if (open)
+	    open = false;
+	else
+	    open = true;
+    }
+
+    bool * getOpen()
+    {
+	return &open;
+    }
+
+    void SetName(const char* nme) {
+	name = std::string(nme);
+    }
+
+    //then GetName
+
+    const char * GetName(){
+	return name.c_str();
+    }
 };
 
 static void showImage(const char *windowName,bool *open, GLuint *textura) {
 
-    
-    if (ImGui::Begin(windowName, open, ImGuiWindowFlags_ResizeFromAnySide))
+    if (*open)
 	{
-		ImVec2 pos = ImGui::GetCursorScreenPos(); // actual position 
-		ImGui::GetWindowDrawList()->AddImage((void*)*textura, pos, ImVec2(ImGui::GetContentRegionAvail().x + pos.x, ImGui::GetContentRegionAvail().y  + pos.y));
 
-	}	
-    ImGui::End();
+	    if (ImGui::Begin(windowName, open, ImGuiWindowFlags_ResizeFromAnySide))
+		{
+		    ImVec2 pos = ImGui::GetCursorScreenPos(); // actual position
+		    ImGui::GetWindowDrawList()->AddImage((void*)*textura, pos, ImVec2(ImGui::GetContentRegionAvail().x + pos.x, ImGui::GetContentRegionAvail().y  + pos.y));
+		    
+		}	
+	    ImGui::End();
+	    
+	}
 }
 
+static std::ostringstream ss;
+
+char const * lTheOpenFileName;
+char const * lFilterPatterns[2] = { "*.jpg", "*.png" };
+
+void *call_from_thread(void *) {
+    lTheOpenFileName = tinyfd_openFileDialog(
+					     "let us read the password back",
+					     "",
+					     2,
+					     lFilterPatterns,
+					     NULL,
+					     0);
+    if (! lTheOpenFileName)
+	{
+	    tinyfd_messageBox(
+			      "Error",
+			      "Open file name is NULL",
+			      "ok",
+			      "error",
+			      1);
+	    return NULL;
+	    
+	}
+    else {cout << "file choosed: " << lTheOpenFileName << endl; return (void *)lTheOpenFileName;}
+    
+    
+}
 
 void ImGui::ShowPixui(bool *p_open)
 {
+    static std::vector<OpenCVImage> data;
+    static bool window1 = true;
+    static bool window2 = false;
+
+    ImGui::ShowMetricsWindow(&window2);
     if (ImGui::Begin("nombre", p_open, ImVec2(90, 100), ImGuiWindowFlags_MenuBar ))
     {
 
 	    static int count;
+	    /* Sample */
+	    if (ImGui::Button("Create new OpenCVImage"))
+		{
+		    data.push_back(OpenCVImage());
+		    static pthread_t t;
+		
+		    //Launch a thread
+		    pthread_create(&t, NULL, call_from_thread, NULL);
+		    
+		    void* temp = NULL;
+		    pthread_join(t, &temp); 
+
+		    if (temp != NULL) {
+			const char* returnValue = (const char *) temp;
+			cout << "RETURNED VALUE: " << returnValue << endl;
+			cv::Mat mmm = cv::imread(returnValue); 
+			data.back().LoadCVMat2(mmm);
+			data.at(data.size() - 1).SetName(returnValue);
+			mmm.release();
+		    }
+		    
+		}
+
+	    static std::vector<string> names;
+
+
+	    for(int i = 0;i < data.size(); i++)
+	    	{
+		    
+	    	    //long num = i;
+	    	    //ss << num;
+	    	    //ImGui::Selectable("ss0" , &selection[0]);
+	    	    //names.emplace_back(ss.str());
+	    	    // if (ImGui::Button(data.at(i).c_str())) {
+	    	    // 	data.at(i).switchOpen();
+	    	    // }
+	    	    // ImGui::SameLine();
+	    	    // ImGui::Text("value: %s", *(data.at(i).getOpen()) ? "true" : "false");
+
+		    ImGui::PushID(i);
+		    if (ImGui::Button(data.at(i).GetName()))
+			    data.at(i).switchOpen();
+		    ImGui::PopID();
+		    ImGui::Text("value: %s", *(data.at(i).getOpen()) ? "true" : "false");
+	    	}
+	    
+	    /* END OF SAMPLE */
 	    static OpenCVImage myglopencv;
 	    static OpenCVImage glcv2;
 
@@ -153,15 +301,15 @@ void ImGui::ShowPixui(bool *p_open)
 	   if (!image2.data) 
 		image2 = cv::imread("image2.jpg", 1);
 	   
-	    static bool window1;
-	    static bool window2 = false;
 
 	    glcv2.LoadCVMat(image);
-	    showImage("imagen", &window1, glcv2.getTexture());
+	    //showImage("imagen", &window1, glcv2.getTexture());
+	    //const char* names[2] = {"window1", "window2"};
+	    // mostrar imagenes
 
 	    myglopencv.LoadCVMat(image2);
 
-	    {
+
 		static int value = 0;
 		static int oldvalue = 0;
 
@@ -176,40 +324,26 @@ void ImGui::ShowPixui(bool *p_open)
 		    myglopencv.UpdateMat(smooth);
 
 		}
-		
-		showImage("imagen2",&window2, myglopencv.getTexture());
-	    }
-	    
-	    
 
+		//showImage("imagen2", &window2, myglopencv.getTexture());		    
+		for(int i = 0; i < data.size(); i++)
+		{
+		    
+		    //showImage(names[i], data.at(i).getOpen(), myglopencv.getTexture());
+		    ImGui::PushID(i);
+		    showImage(data.at(i).GetName(), data.at(i).getOpen(), data.at(i).getTexture());
+		    ImGui::PopID();
+		    
+		}
     }
     
     ImGui::End();
+        
 }
 
-
-void load_opencv_Mat(cv::Mat frame, GLuint *mytexture) {
-
+void getVideoCapture() {
     
-    if (!*mytexture)
-	{
-
-	    cv::cvtColor(frame, frame, CV_BGR2RGB);
-
-	    glGenTextures(1, mytexture);
-	    glBindTexture(GL_TEXTURE_2D, *mytexture);
-	    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	    
-	    // Set texture clamping method
-	    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-	    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-	    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, frame.cols, frame.rows, 0, GL_RGB, GL_UNSIGNED_BYTE, frame.ptr());
-	    
-	}
-      
 }
-
 
 #else
 
