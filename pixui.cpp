@@ -18,6 +18,8 @@
 #include "opencv2/videoio.hpp"
 #include "opencv2/highgui.hpp"
 #include<opencv2/opencv.hpp>
+#include "opencv2/highgui/highgui.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
 #include <GLFW/glfw3.h>
 #include<pthread.h>
 #include<string>
@@ -67,13 +69,20 @@
 
 GLuint mat_to_tex(const cv::Mat&);
 void load_opencv_Mat(cv::Mat, GLuint *);
+void findCircles(cv::Mat& src, int entre, int threshold, int threshold_center);
+void myFindContours(cv::Mat mat);
 
 static cv::Mat image2;
 static bool show_tester_image = false;
 //static VideoCapture* inVid;
+static int thresh = 100;
+
+cv::RNG rng(12345);
 
 using namespace std;
 using namespace ImGui;
+using namespace cv;
+
 
 struct OpenCVImage
 {
@@ -87,15 +96,18 @@ struct OpenCVImage
 	texture = 0;
     }
     
-    void LoadCVMat(cv::Mat frame, int internal_format = GL_BGR, int format_to_convert = GL_RGB) {
+    void LoadCVMat(cv::Mat frame, bool change = true) {
 
 	if (frame.empty())
 	    return;
-	
+
 	if (!texture)
 	{
 	    mat = frame; // maybe i should copy that frame (clone it)
 
+	    if (change)
+		cv::cvtColor(mat, mat, CV_BGR2RGB);
+	    
 	    glGenTextures(1, &texture);
 	    glBindTexture(GL_TEXTURE_2D, texture);
 	    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -104,7 +116,7 @@ struct OpenCVImage
 	    // Set texture clamping method
 	    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
 	    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-	    glTexImage2D(GL_TEXTURE_2D, 0, format_to_convert, mat.cols, mat.rows, 0, internal_format, GL_UNSIGNED_BYTE, mat.ptr());
+	    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, mat.cols, mat.rows, 0, GL_RGB, GL_UNSIGNED_BYTE, mat.ptr());
 	    
 	}else
 	    cout << "We HAVE SOMETHING AT TEXTURE" << "\n";
@@ -184,6 +196,7 @@ static void showImage(const char *windowName,bool *open, GLuint *textura) {
 
 char const * lTheOpenFileName;
 char const * lFilterPatterns[2] = { "*.jpg", "*.png" };
+const char *filepath = NULL;
 
 void *call_from_thread(void *) {
     lTheOpenFileName = tinyfd_openFileDialog(
@@ -204,10 +217,15 @@ void *call_from_thread(void *) {
 	    return NULL;
 	    
 	}
-    else {cout << "file choosed: " << lTheOpenFileName << endl; return (void *)lTheOpenFileName;}
+    else {
+	cout << "file choosed: " << lTheOpenFileName << endl;
+	filepath = lTheOpenFileName;
+    }
     
-    
+    return void *;
 }
+
+static cv::Mat circleimg;
 
 void ImGui::ShowPixui(bool *p_open)
 {
@@ -230,19 +248,15 @@ void ImGui::ShowPixui(bool *p_open)
 		    //Launch a thread
 		    pthread_create(&t, NULL, call_from_thread, NULL);
 		    
-		    void* temp = NULL;
-		    pthread_join(t, &temp); 
-
-		    if (temp != NULL) {
-			const char* returnValue = (const char *) temp;
-			cout << "RETURNED VALUE: " << returnValue << endl;
-			cv::Mat mmm = cv::imread(returnValue); 
-			data.back().LoadCVMat(mmm);
-			data.at(data.size() - 1).SetName(returnValue);
-			mmm.release();
-		    }
-		    
 		}
+
+	    if (filepath != NULL){
+		cv::Mat mmm = cv::imread(filepath); 
+		data.back().LoadCVMat(mmm);
+		data.at(data.size() - 1).SetName(filepath);
+		mmm.release();
+		filepath = NULL;
+	    }
 
 	    
 	    for(int i = 0;i < data.size(); i++)
@@ -276,7 +290,7 @@ void ImGui::ShowPixui(bool *p_open)
 			    }
 
 			    // reload a new image
-			    testImage.LoadCVMat(data.at(selectedItem).GetMat()->clone());
+			    testImage.LoadCVMat(data.at(selectedItem).GetMat()->clone(), false);
 			    
 			}
 
@@ -287,27 +301,44 @@ void ImGui::ShowPixui(bool *p_open)
 		showImage("Tester", &show_tester_image, testImage.getTexture());
 	    }
 
-
-
 	    
 		static int value = 0;
 		static int oldvalue = 0;
-
+		static int entre = 8,  threshold = 90, threshold_center = 100;
+		
 		ImGui::SliderInt("Gaussian Blur", &value, 0, 101);
+		ImGui::SliderInt("Entre", &entre, 0, 100);
+		ImGui::SliderInt("threshold", &threshold, 0, 200);
+		ImGui::SliderInt("threshold center", &threshold_center, 0, 200);
+		ImGui::SliderInt("canny thresh", &thresh, 0, 200);
+	        
 		if (value%2 == 0)
 		    value += 1; //we need a non number
 		if (show_tester_image) {
 		    if (value != oldvalue) {
 			oldvalue = value;
-			static cv::Mat smooth;
+			
 			if (testImage.GetMat() != NULL)
 			    {
-				GaussianBlur( *(testImage.GetMat()) , smooth, cv::Size( value, value ), 0, 0 );
-				testImage.UpdateMat(smooth);
+				//GaussianBlur( *(testImage.GetMat()), circleimg, cv::Size( value, value ), 0, 0 );
+				cvtColor( *(testImage.GetMat()), *(testImage.GetMat()) , CV_RGB2GRAY ); // this is wrong
+				blur( *(testImage.GetMat()), circleimg, Size(3,3) );
+				testImage.UpdateMat(circleimg);
 				
 			    }
-			
 		    }
+
+		    
+		    if (ImGui::Button("Find circles"))
+			{
+			    findCircles(circleimg, entre, threshold, threshold_center);
+			    testImage.UpdateMat(circleimg);
+			}
+		    
+		    if (ImGui::Button("find contours"))
+			{
+			    myFindContours(circleimg);
+			}
 		    
 		}
 
@@ -320,12 +351,68 @@ void ImGui::ShowPixui(bool *p_open)
 		    
 		}
     
-    
-        
     }
     ImGui::End();
 }
 
+void findCircles(cv::Mat& src, int entre, int threshold, int threshold_center) {
+      /// Convert it to gray
+    cout << "entro aqui" << endl;
+    cv::Mat src_gray;
+    cvtColor( src, src_gray , CV_RGB2GRAY );
+    
+    /// Reduce the noise so we avoid false circle detection
+    // GaussianBlur( src_gray, src_gray, cv::Size(9, 9), 2, 2 );
+    
+    vector<Vec3f> circles;
+    
+    /// Apply the Hough Transform to find the circles
+    HoughCircles( src_gray, circles, CV_HOUGH_GRADIENT, 1, src_gray.rows/entre, threshold, threshold_center, 0, 0 );
+    
+    /// Draw the circles detected
+    for( size_t i = 0; i < circles.size(); i++ )
+	{
+	    Point center(cvRound(circles[i][0]), cvRound(circles[i][1]));
+	    int radius = cvRound(circles[i][2]);
+	    // circle center
+	    circle( src, center, 3, Scalar(0,255,0), -1, 8, 0 );
+	    // circle outline
+	    circle( src, center, radius, Scalar(0,0,255), 3, CV_AA, 0 );
+	}
+    
+}
+
+void myFindContours(cv::Mat mat) {
+    Mat canny_output;
+    vector<vector<Point> > contours;
+    vector<Vec4i> hierarchy;
+
+    /// Detect edges using canny
+    Canny( mat, canny_output, thresh, thresh*4, 3 );
+    /// Find contours
+    findContours( canny_output, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
+
+    /// Draw contours
+    Mat drawing = Mat::zeros( canny_output.size(), CV_8UC3 );
+    for( int i = 0; i < contours.size(); i++ )
+	{
+	    Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
+	    drawContours( drawing, contours, i, color, 2, 8, hierarchy, 0, Point() );
+	}
+
+    cout << "Tamaño del contours: " << contours[0][0] << endl;
+    // for (unsigned int i = 0; i < contours.size(); ++i)
+    //   {
+    //     cout << "contorno: " << i << contours[1] << endl;
+    //   }
+    // /// Show in a window
+    namedWindow( "Contours", WINDOW_NORMAL );
+    imshow( "Contours", drawing );
+
+    waitKey(0);
+
+    
+}
 void getVideoCapture() {
     
 }
