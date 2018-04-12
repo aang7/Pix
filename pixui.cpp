@@ -74,9 +74,9 @@ void myFindContours(cv::Mat mat);
 
 static cv::Mat image2;
 static bool show_tester_image = false;
-//static VideoCapture* inVid;
+static cv::VideoCapture camera;
 static int thresh = 100;
-
+static int cam_id = 0; //my laptop webcam if we had another webcam connected the cam_id would be = 1
 cv::RNG rng(12345);
 
 using namespace std;
@@ -123,7 +123,11 @@ struct OpenCVImage
     }
 
 
-    void UpdateMat(cv::Mat& frame ) {
+    void UpdateMat(cv::Mat& frame, bool change = false) {
+
+	if (change)
+	    cv::cvtColor(frame, frame, CV_BGR2RGB);
+
 	// image must have same size
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, frame.cols, frame.rows, GL_RGB,
@@ -155,6 +159,12 @@ struct OpenCVImage
 	} else
 	    return NULL;
 	
+    }
+
+    // this function could be omitted using the above function
+    // but we had to change the use of it ( the above)
+    cv::Mat* GetMatDirection() {
+	return &mat;
     }
 
     void switchOpen(){
@@ -222,7 +232,7 @@ void *call_from_thread(void *) {
 	filepath = lTheOpenFileName;
     }
     
-    return void *;
+    return NULL;
 }
 
 static cv::Mat circleimg;
@@ -230,7 +240,6 @@ static cv::Mat circleimg;
 void ImGui::ShowPixui(bool *p_open)
 {
     static std::vector<OpenCVImage> data;
-    static bool window1 = true;
     static bool window2 = false;
     static int  selectedItem = -1;
     static int actualitem = -1;
@@ -242,21 +251,22 @@ void ImGui::ShowPixui(bool *p_open)
 
 	    if (ImGui::Button("Create new OpenCVImage"))
 		{
-		    data.push_back(OpenCVImage());
 		    static pthread_t t;
-		
+		    
 		    //Launch a thread
 		    pthread_create(&t, NULL, call_from_thread, NULL);
 		    
 		}
 
-	    if (filepath != NULL){
-		cv::Mat mmm = cv::imread(filepath); 
-		data.back().LoadCVMat(mmm);
-		data.at(data.size() - 1).SetName(filepath);
-		mmm.release();
-		filepath = NULL;
-	    }
+	    if (filepath != NULL)
+		{
+		    data.push_back(OpenCVImage());
+		    cv::Mat mmm = cv::imread(filepath); 
+		    data.back().LoadCVMat(mmm);
+		    data.at(data.size() - 1).SetName(filepath);
+		    mmm.release();
+		    filepath = NULL;
+		}
 
 	    
 	    for(int i = 0;i < data.size(); i++)
@@ -272,7 +282,6 @@ void ImGui::ShowPixui(bool *p_open)
 	    	}
 	    
 	    
-	    static OpenCVImage myglopencv;
 	    static OpenCVImage testImage;
 
 	    if (ImGui::Selectable("Show tester image", &show_tester_image))
@@ -293,6 +302,44 @@ void ImGui::ShowPixui(bool *p_open)
 			    testImage.LoadCVMat(data.at(selectedItem).GetMat()->clone(), false);
 			    
 			}
+
+		    
+		}
+
+	    static bool open_camera = false;
+	    static OpenCVImage camera_image;
+	    ImGui::Selectable("Camera test", &open_camera);
+	    ImVec2 size(ImGui::GetWindowContentRegionMax().x*0.70, ImGui::GetWindowHeight()*0.77);
+	    ImVec2 pos = ImGui::GetCursorScreenPos(); //Pocision actual
+	    if (open_camera)
+		{
+		    if (!camera.isOpened()) 
+			{
+			    if (camera.open(cam_id))
+				;
+			    else
+				std::cout << "camera don't found" << std::endl;
+			}
+		    else
+			{
+			    cv::Mat frame;
+			    camera.read(frame); // get the cam image and storage it in frame variable
+			    if (*camera_image.getTexture() != 0)
+				camera_image.UpdateMat(frame, true);
+			    else
+				camera_image.LoadCVMat(frame, true);
+
+			    
+			}
+		    ImGui::GetWindowDrawList()->AddImage((void*)*camera_image.getTexture(), pos, ImVec2(pos.x + size.x, pos.y + size.y));
+
+		    
+		    if (ImGui::Button("Close camera"))
+			{
+			    camera.release();
+			    open_camera = false;
+			}
+
 
 		    
 		}
@@ -320,9 +367,9 @@ void ImGui::ShowPixui(bool *p_open)
 			
 			if (testImage.GetMat() != NULL)
 			    {
-				//GaussianBlur( *(testImage.GetMat()), circleimg, cv::Size( value, value ), 0, 0 );
-				cvtColor( *(testImage.GetMat()), *(testImage.GetMat()) , CV_RGB2GRAY ); // this is wrong
-				blur( *(testImage.GetMat()), circleimg, Size(3,3) );
+				cv::GaussianBlur( *(testImage.GetMat()), circleimg, cv::Size( value, value ), 0, 0 );
+				//cv::cvtColor( *(testImage.GetMat()), *(testImage.GetMat()) , CV_RGB2GRAY ); // this is wrong
+				//cv::blur( *(testImage.GetMat()), circleimg, Size(3,3) );
 				testImage.UpdateMat(circleimg);
 				
 			    }
