@@ -26,7 +26,7 @@
 #include <sstream>
 #include <iostream>
 #include "tinyfiledialogs.h"
-
+#include "imageutils.h"
 
 
 #ifdef _MSC_VER
@@ -70,128 +70,31 @@
 GLuint mat_to_tex(const cv::Mat&);
 void load_opencv_Mat(cv::Mat, GLuint *);
 void findCircles(cv::Mat& src, int entre, int threshold, int threshold_center);
-void myFindContours(cv::Mat mat);
+cv::Mat& myFindContours(cv::Mat mat);
 
 static cv::Mat image2;
+static cv::Mat tbaseimage; // base tester image
 static bool show_tester_image = false;
 static cv::VideoCapture camera;
 static int thresh = 100;
-static int cam_id = 0; //my laptop webcam if we had another webcam connected the cam_id would be = 1
+static int cam_id = 1; //my laptop webcam if we had another webcam connected the cam_id would be = 1
 cv::RNG rng(12345);
+char const * lTheOpenFileName;
+char const * lFilterPatterns[2] = { "*.jpg", "*.png" };
+const char *filepath = NULL;
+
 
 using namespace std;
 using namespace ImGui;
 using namespace cv;
 
 
-struct OpenCVImage
-{
-
-    GLuint texture;
-    cv::Mat mat;
-    bool open;
-    string name;
-    
-    OpenCVImage() {
-	texture = 0;
-    }
-    
-    void LoadCVMat(cv::Mat frame, bool change = true) {
-
-	if (frame.empty())
-	    return;
-
-	if (!texture)
-	{
-	    mat = frame; // maybe i should copy that frame (clone it)
-
-	    if (change)
-		cv::cvtColor(mat, mat, CV_BGR2RGB);
-	    
-	    glGenTextures(1, &texture);
-	    glBindTexture(GL_TEXTURE_2D, texture);
-	    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	    
-	    // Set texture clamping method
-	    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-	    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-	    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, mat.cols, mat.rows, 0, GL_RGB, GL_UNSIGNED_BYTE, mat.ptr());
-	    
-	}else
-	    cout << "We HAVE SOMETHING AT TEXTURE" << "\n";
-    }
-
-
-    void UpdateMat(cv::Mat& frame, bool change = false) {
-
-	if (change)
-	    cv::cvtColor(frame, frame, CV_BGR2RGB);
-
-	// image must have same size
-	glBindTexture(GL_TEXTURE_2D, texture);
-	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, frame.cols, frame.rows, GL_RGB,
-			GL_UNSIGNED_BYTE, frame.ptr());
-	// if does not have the same size then i need to recreate the texture from scratch
-	//could be something like
-	/*if (!(frame.size() == mat.size())) {
-		Clear();
-		mat.release(); // maybe this is redundant
-		LoadCVMat(frame);
-		
-	} */
-    }
-
-    // clear texture and realease all memory associated with it
-    void Clear() { glDeleteTextures(1, &texture); texture = 0; }
-
-    GLuint * getTexture() { return &texture; }
-
-    // return mat if is not empty otherwise return null
-    cv::Mat* GetMat() {
-
-	if (!mat.empty())
-	{
-	    if (mat.data)
-		return &mat;
-	    else
-		return NULL;
-	} else
-	    return NULL;
-	
-    }
-
-    // this function could be omitted using the above function
-    // but we had to change the use of it ( the above)
-    cv::Mat* GetMatDirection() {
-	return &mat;
-    }
-
-    void switchOpen(){
-	if (open)
-	    open = false;
-	else
-	    open = true;
-    }
-
-    bool * getOpen() { return &open; }
-
-    void SetName(const char* nme) {
-	name = std::string(nme);
-    }
-
-    //then GetName
-
-    const char * GetName(){
-	return name.c_str();
-    }
-};
-
 static void showImage(const char *windowName,bool *open, GLuint *textura) {
 
     if (*open)
 	{
 
+	    ImGui::SetNextWindowBgAlpha(0.4f); // Transparent background
 	    if (ImGui::Begin(windowName, open, ImGuiWindowFlags_ResizeFromAnySide))
 		{
 		    ImVec2 pos = ImGui::GetCursorScreenPos(); // actual position
@@ -204,9 +107,6 @@ static void showImage(const char *windowName,bool *open, GLuint *textura) {
 }
 
 
-char const * lTheOpenFileName;
-char const * lFilterPatterns[2] = { "*.jpg", "*.png" };
-const char *filepath = NULL;
 
 void *call_from_thread(void *) {
     lTheOpenFileName = tinyfd_openFileDialog(
@@ -235,7 +135,6 @@ void *call_from_thread(void *) {
     return NULL;
 }
 
-static cv::Mat circleimg;
 
 void ImGui::ShowPixui(bool *p_open)
 {
@@ -246,7 +145,8 @@ void ImGui::ShowPixui(bool *p_open)
 
 
     ImGui::ShowMetricsWindow(&window2);
-    if (ImGui::Begin("nombre", p_open, ImVec2(90, 100), ImGuiWindowFlags_MenuBar ))
+    ImGui::SetNextWindowBgAlpha(0.5f); // Transparent background
+    if (ImGui::Begin("nombre", p_open, ImVec2(90, 100) ))
     {
 
 	    if (ImGui::Button("Create new OpenCVImage"))
@@ -316,12 +216,16 @@ void ImGui::ShowPixui(bool *p_open)
 		    if (!camera.isOpened()) 
 			{
 			    if (camera.open(cam_id))
-				;
+				{
+				    camera.set(CV_CAP_PROP_FRAME_WIDTH,320);
+				    camera.set(CV_CAP_PROP_FRAME_HEIGHT,240);
+				}
 			    else
 				std::cout << "camera don't found" << std::endl;
 			}
 		    else
 			{
+			   
 			    cv::Mat frame;
 			    camera.read(frame); // get the cam image and storage it in frame variable
 			    if (*camera_image.getTexture() != 0)
@@ -367,10 +271,10 @@ void ImGui::ShowPixui(bool *p_open)
 			
 			if (testImage.GetMat() != NULL)
 			    {
-				cv::GaussianBlur( *(testImage.GetMat()), circleimg, cv::Size( value, value ), 0, 0 );
+				cv::GaussianBlur( *(testImage.GetMat()), tbaseimage, cv::Size( value, value ), 0, 0 );
 				//cv::cvtColor( *(testImage.GetMat()), *(testImage.GetMat()) , CV_RGB2GRAY ); // this is wrong
-				//cv::blur( *(testImage.GetMat()), circleimg, Size(3,3) );
-				testImage.UpdateMat(circleimg);
+				//cv::blur( *(testImage.GetMat()), tbaseimage, Size(3,3) );
+				testImage.UpdateMat(tbaseimage);
 				
 			    }
 		    }
@@ -378,13 +282,13 @@ void ImGui::ShowPixui(bool *p_open)
 		    
 		    if (ImGui::Button("Find circles"))
 			{
-			    findCircles(circleimg, entre, threshold, threshold_center);
-			    testImage.UpdateMat(circleimg);
+			    findCircles(tbaseimage, entre, threshold, threshold_center);
+			    testImage.UpdateMat(tbaseimage);
 			}
 		    
 		    if (ImGui::Button("find contours"))
 			{
-			    myFindContours(circleimg);
+			    testImage.UpdateMat(myFindContours(tbaseimage));
 			}
 		    
 		}
@@ -429,37 +333,37 @@ void findCircles(cv::Mat& src, int entre, int threshold, int threshold_center) {
     
 }
 
-void myFindContours(cv::Mat mat) {
+
+Mat drawing; /*  we need a global variable to hold the reference to show up in the UpdateMat method
+		 maybe we can clone the image to create another reference but for the moment this work. */
+
+Mat& myFindContours(cv::Mat mat) {
     Mat canny_output;
     vector<vector<Point> > contours;
     vector<Vec4i> hierarchy;
 
+    std::cout << "Channgels: "<<mat.channels();
     /// Detect edges using canny
     Canny( mat, canny_output, thresh, thresh*4, 3 );
-    /// Find contours
+    std::cout << "Channgels: "<<canny_output.channels();
+
+    // Find contours needs an image of one channel so we need to catch it ..TODO
     findContours( canny_output, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
 
     /// Draw contours
-    Mat drawing = Mat::zeros( canny_output.size(), CV_8UC3 );
+    drawing = Mat::zeros( canny_output.size(), CV_8UC3 );
+
     for( int i = 0; i < contours.size(); i++ )
 	{
 	    Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
-	    drawContours( drawing, contours, i, color, 2, 8, hierarchy, 0, Point() );
+	    drawContours( drawing, contours, i, color, 1, CV_AA, hierarchy, 0, Point(0, 0) );
 	}
 
     cout << "Tamaño del contours: " << contours[0][0] << endl;
-    // for (unsigned int i = 0; i < contours.size(); ++i)
-    //   {
-    //     cout << "contorno: " << i << contours[1] << endl;
-    //   }
-    // /// Show in a window
-    namedWindow( "Contours", WINDOW_NORMAL );
-    imshow( "Contours", drawing );
-
-    waitKey(0);
-
     
+    return drawing;    
 }
+
 void getVideoCapture() {
     
 }
