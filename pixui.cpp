@@ -183,6 +183,7 @@ void ImGui::ShowPixui(bool *p_open)
 	    
 	    
 	    static OpenCVImage testImage;
+	    static OpenCVImage webcamImage;
 
 	    if (ImGui::Selectable("Show tester image", &show_tester_image))
 		{
@@ -213,27 +214,26 @@ void ImGui::ShowPixui(bool *p_open)
 	    ImVec2 pos = ImGui::GetCursorScreenPos(); //Pocision actual
 	    if (open_camera)
 		{
+		    cv::Mat frame;
+		    
 		    if (!camera.isOpened()) 
 			{
 			    if (camera.open(cam_id))
 				{
-				    camera.set(CV_CAP_PROP_FRAME_WIDTH,320);
-				    camera.set(CV_CAP_PROP_FRAME_HEIGHT,240);
+				    camera.set(CV_CAP_PROP_FRAME_WIDTH,800);
+				    camera.set(CV_CAP_PROP_FRAME_HEIGHT,640);
 				}
 			    else
 				std::cout << "camera don't found" << std::endl;
 			}
 		    else
 			{
-			   
-			    cv::Mat frame;
 			    camera.read(frame); // get the cam image and storage it in frame variable
 			    if (*camera_image.getTexture() != 0)
 				camera_image.UpdateMat(frame, true);
 			    else
 				camera_image.LoadCVMat(frame, true);
 
-			    
 			}
 		    ImGui::GetWindowDrawList()->AddImage((void*)*camera_image.getTexture(), pos, ImVec2(pos.x + size.x, pos.y + size.y));
 
@@ -243,11 +243,33 @@ void ImGui::ShowPixui(bool *p_open)
 			    camera.release();
 			    open_camera = false;
 			}
+		    static int webcamframe_counter = 0;
+		    if (ImGui::Button("Capture frame"))
+			{
+			    camera.set(CV_CAP_PROP_FRAME_WIDTH,1024);
+			    camera.set(CV_CAP_PROP_FRAME_HEIGHT,768);
+			    if(!frame.empty())
+				{
+				   
+				    camera.read(frame);
+				    webcamframe_counter++;
+				    stringstream ss;
+				    ss << "Webcam frame: " << webcamframe_counter;
+				    data.push_back(OpenCVImage());
+				    data.back().LoadCVMat(frame);
+				    data.at(data.size() - 1).SetName(ss.str().c_str());
+				    camera.set(CV_CAP_PROP_FRAME_WIDTH,800);
+				    camera.set(CV_CAP_PROP_FRAME_HEIGHT, 640);
 
-
+				    //webcamImage.LoadCVMat(frame, false);
+				}
+			}
 		    
+		    //ImGui::Selectable("Show Webcam Frame", webcamImage.getOpen());
+		    //showImage("Webcam frame", webcamImage.getOpen(), webcamImage.getTexture());
+		    		    
 		}
-
+	    
 	    if (show_tester_image) {
 		showImage("Tester", &show_tester_image, testImage.getTexture());
 	    }
