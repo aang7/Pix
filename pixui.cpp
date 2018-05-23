@@ -27,7 +27,7 @@
 #include <iostream>
 #include "tinyfiledialogs.h"
 #include "imageutils.h"
-
+#include "aoi/aoi.h"
 
 #ifdef _MSC_VER
 #pragma warning (disable: 4996) // 'This function or variable may be unsafe': strcpy, strdup, sprintf, vsnprintf, sscanf, fopen
@@ -77,7 +77,7 @@ static cv::Mat tbaseimage; // base tester image
 static bool show_tester_image = false;
 static cv::VideoCapture camera;
 static int thresh = 100;
-static int cam_id = 1; //my laptop webcam if we had another webcam connected the cam_id would be = 1
+static int cam_id = 0; //my laptop webcam if we had another webcam connected the cam_id would be = 1
 cv::RNG rng(12345);
 char const * lTheOpenFileName;
 char const * lFilterPatterns[2] = { "*.jpg", "*.png" };
@@ -135,6 +135,14 @@ void *call_from_thread(void *) {
     return NULL;
 }
 
+void *start_aoi_process(void *) {
+    startAOI();
+
+    return NULL;
+}
+
+
+
 
 void ImGui::ShowPixui(bool *p_open)
 {
@@ -156,6 +164,14 @@ void ImGui::ShowPixui(bool *p_open)
 		    //Launch a thread
 		    pthread_create(&t, NULL, call_from_thread, NULL);
 		    
+		}
+	    if (ImGui::Button("AOI test"))
+		{
+		    static pthread_t t;
+		    
+		    //Launch a thread
+		    pthread_create(&t, NULL, start_aoi_process, NULL);
+		
 		}
 
 	    if (filepath != NULL)
