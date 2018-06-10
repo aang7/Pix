@@ -1,0 +1,21 @@
+
+* Pix
+
+The name came from the acronym: Process - Image - Execution. 
+Pix it's a small project that uses [[https://github.com/ocornut/imgui][Dear ImGui]] library for the user interface and OpenCV for computer vision approaches. 
+
+The idea was to have a basic user interface to watch some OpenCV tasks. I was wondering if I could use ImGui to show the OpenCV images and make some basic tasks like applying a Gaussian blur filter and so on.
+
+So here is the result, using OpenGL 2 example:
+
+[[file:samples/pixsample.png]]
+
+[[file:samples/pixsample.gif]]
+
+
+I think it can be improved a lot. I'm not a C++ programmer so maybe you may find out that pieces of code can be improved. 
+Also I was learning some OpenCV stuff when I had been working on this, so there is a branch called /aoi/ (Automated Object Isolation) inside this repository where I used some /Machine Learning/ stuff. 
+I used the [[https://www.amazon.com/OpenCV-Example-Prateek-Joshi/dp/1785280945/ref=sr_1_1?ie=UTF8&qid=1528589299&sr=8-1&keywords=OpenCV+by+Example][OpenCV by Example]] book to make it.
+
+
+
